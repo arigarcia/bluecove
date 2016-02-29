@@ -157,9 +157,8 @@ dispatch_queue_t mainQueue = NULL;
 
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
-
-#ifdef USE_WORKER_THREAD
-    
+  #ifdef USE_WORKER_THREAD
+    //
     pthread_t thread;
     NativeThreadParams threadParams;
     threadParams.vm = vm;
@@ -179,25 +178,22 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     if (status == kMPTimeoutErr) {
         return -1;
     }
-#else
-    mainQueue = dispatch_queue_create(NULL, DISPATCH_QUEUE_SERIAL);
-#endif
+    //
+  #else
+    mainQueue = dispatch_queue_create("c.intelbht.OSXMainQueue", DISPATCH_QUEUE_SERIAL);
+  #endif
     return JNI_VERSION_1_2;
 }
 
 JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
-
-#ifdef USE_WORKER_THREAD
-    
+  #ifdef USE_WORKER_THREAD
     if (mainRunLoop != NULL) {
         CFRunLoopStop(mainRunLoop);
         mainRunLoop = NULL;
     }
-    
-#else
+  #else
     dispatch_release(mainQueue);
-#endif
-
+  #endif
 }
 
 #ifdef USE_WORKER_THREAD
@@ -284,7 +280,7 @@ void synchronousBTOperation(Runnable* runnable) {
 void synchronousBTOperation(Runnable *runnable) {
     if (runnable != NULL) {
         ndebug(("invoke    BTOperation %s", runnable->name));
-
+        
         dispatch_block_t block = ^{
             if (isRunnableCorrupted(runnable)) {
                 ndebug(("Error: execute BTOperation got corrupted runnable"));
@@ -299,12 +295,17 @@ void synchronousBTOperation(Runnable *runnable) {
         // Prevent deadlocking the main thread with dispatch_sync
         // by checking if we are on the main thread first.
         if ([NSThread isMainThread]) {
+            ndebug(("Executing %s on main thread", runnable->name));
             block();
         }
         else {
-            dispatch_sync(dispatch_get_main_queue(), block);
+            //replace dispatch_get_main_queue() to mainQueue
+            ndebug(("Enqueuing %s on queue customized", runnable->name));
+            dispatch_sync(mainQueue, block);
+            ndebug(("Block(s) retained in mainQueue: %d", mainQueue.retainCount));
         }
-
+        
+        //
         ndebug(("return    BTOperation %s", runnable->name));
     }
 }
@@ -553,6 +554,7 @@ JNIEXPORT jint JNICALL Java_com_intel_bluetooth_BluetoothStackOSX_getLocalDevice
 }
 
 RUNNABLE(GetLocalDeviceVersion, "GetLocalDeviceVersion") {
+    ndebug(("running GetLocalDeviceVersion"));
     NumVersion *btVersion = (NumVersion *) pData[0];
     // BluetoothHCIVersionInfo* hciVersion = (BluetoothHCIVersionInfo*)pData[1];
 
